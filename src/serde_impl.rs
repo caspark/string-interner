@@ -93,7 +93,7 @@ macro_rules! impl_serde_for_symbol {
                 &self,
                 serializer: T,
             ) -> ::core::result::Result<T::Ok, T::Error> {
-                self.value.serialize(serializer)
+                self.to_usize().serialize(serializer)
             }
         }
 
@@ -102,7 +102,9 @@ macro_rules! impl_serde_for_symbol {
                 deserializer: D,
             ) -> ::core::result::Result<Self, D::Error> {
                 let index = <$ty as ::serde::Deserialize<'de>>::deserialize(deserializer)?;
-                let ::core::option::Option::Some(symbol) = Self::new(index) else {
+                let ::core::option::Option::Some(symbol) =
+                    index.try_into().ok().and_then(Self::try_from_usize)
+                else {
                     return ::core::result::Result::Err(<D::Error as ::serde::de::Error>::custom(
                         ::core::concat!(
                             "invalid index value for `",
@@ -119,3 +121,74 @@ macro_rules! impl_serde_for_symbol {
 impl_serde_for_symbol!(SymbolU16, u16);
 impl_serde_for_symbol!(SymbolU32, u32);
 impl_serde_for_symbol!(SymbolUsize, usize);
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        symbol::{SymbolU16, SymbolU32, SymbolUsize},
+        Symbol,
+    };
+    use serde_json;
+
+    fn symbol_round_trip_serializes<S>(symbol: S) -> bool
+    where
+        S: Symbol + std::fmt::Debug + serde::Serialize + serde::de::DeserializeOwned + PartialEq,
+    {
+        let serialized = serde_json::to_string(&symbol).expect("serialization should succeed");
+        let deserialized: S =
+            serde_json::from_str(&serialized).expect("deserialization should succeed");
+        symbol == deserialized
+    }
+
+    #[test]
+    fn symbol_u16_round_trips() {
+        assert!(symbol_round_trip_serializes(
+            SymbolU16::try_from_usize(0).unwrap()
+        ));
+        assert!(symbol_round_trip_serializes(
+            SymbolU16::try_from_usize(42).unwrap()
+        ));
+        assert!(symbol_round_trip_serializes(
+            SymbolU16::try_from_usize(u16::MAX as usize - 1).unwrap()
+        ));
+    }
+
+    #[test]
+    fn symbol_u32_round_trips() {
+        assert!(symbol_round_trip_serializes(
+            SymbolU32::try_from_usize(0).unwrap()
+        ));
+        assert!(symbol_round_trip_serializes(
+            SymbolU32::try_from_usize(42).unwrap()
+        ));
+        assert!(symbol_round_trip_serializes(
+            SymbolU32::try_from_usize(u32::MAX as usize - 1).unwrap()
+        ));
+    }
+
+    #[test]
+    fn symbol_usize_round_trips() {
+        assert!(symbol_round_trip_serializes(
+            SymbolUsize::try_from_usize(0).unwrap()
+        ));
+        assert!(symbol_round_trip_serializes(
+            SymbolUsize::try_from_usize(42).unwrap()
+        ));
+        assert!(symbol_round_trip_serializes(
+            SymbolUsize::try_from_usize(usize::MAX as usize - 1).unwrap()
+        ));
+    }
+
+    #[test]
+    fn raw_usize_round_trips() {
+        assert!(symbol_round_trip_serializes(
+            usize::try_from_usize(0).unwrap()
+        ));
+        assert!(symbol_round_trip_serializes(
+            usize::try_from_usize(42).unwrap()
+        ));
+        assert!(symbol_round_trip_serializes(
+            usize::try_from_usize(usize::MAX).unwrap()
+        ));
+    }
+}
